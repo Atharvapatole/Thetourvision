@@ -255,7 +255,7 @@ export default function CustomerAccountPage() {
               </div>
             ) : (
               <div className="rounded-2xl border border-gray-200 bg-white p-12 text-center text-xs text-gray-500">
-                You haven't submitted any travel inquiries yet.{' '}
+                You haven&apos;t submitted any travel inquiries yet.{' '}
                 <Link href="/trip-planner" className="text-primary-700 font-semibold underline">
                   Plan your first vacation now!
                 </Link>

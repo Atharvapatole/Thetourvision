@@ -82,7 +82,7 @@ export default function TestimonialsPage() {
                 </div>
 
                 <p className="text-xs sm:text-sm text-gray-700 leading-relaxed italic">
-                  "{t.review}"
+                  &quot;{t.review}&quot;
                 </p>
               </div>
 

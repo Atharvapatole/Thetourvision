@@ -173,7 +173,7 @@ export default function AdminQuotationsListPage() {
               ) : (
                 <tr>
                   <td colSpan={7} className="py-12 text-center text-xs text-gray-400">
-                    No quotations generated yet. Click "New Quotation" above to craft one.
+                    No quotations generated yet. Click &quot;New Quotation&quot; above to craft one.
                   </td>
                 </tr>
               )}

@@ -46,7 +46,7 @@ export default function AdminSettingsPage() {
                 <span>Demo Website Indicator Badge</span>
               </div>
               <p className="text-xs text-amber-800/80 mt-1 max-w-xl leading-relaxed">
-                Controls the persistent, unobtrusive "DEMO WEBSITE" badge on public visitor pages. Demonstrates client prototype readiness while clearly identifying Automate Stack demo origin.
+                Controls the persistent, unobtrusive &quot;DEMO WEBSITE&quot; badge on public visitor pages. Demonstrates client prototype readiness while clearly identifying Automate Stack demo origin.
               </p>
             </div>
 

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   Users, Search, Filter, MessageCircle, Phone, 
   Mail, Calendar, MapPin, Check, Clock, 
@@ -19,7 +19,7 @@ export default function AdminInquiriesPage() {
   const [newNote, setNewNote] = useState('');
   const [updatingStatus, setUpdatingStatus] = useState(false);
 
-  const fetchInquiries = async () => {
+  const fetchInquiries = useCallback(async () => {
     setLoading(true);
     try {
       const supabase = createClient();
@@ -38,11 +38,11 @@ export default function AdminInquiriesPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [statusFilter]);
 
   useEffect(() => {
     fetchInquiries();
-  }, [statusFilter]);
+  }, [fetchInquiries]);
 
   const handleStatusChange = async (inquiryId: string, newStatus: InquiryStatus) => {
     setUpdatingStatus(true);
