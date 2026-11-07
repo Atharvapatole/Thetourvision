@@ -1,12 +1,12 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { 
   Compass, MapPin, Calendar, Users, ArrowRight, 
   Sparkles, Star, Shield, HeartHandshake, Award, 
-  CheckCircle, MessageCircle, Clock, ChevronRight
+  CheckCircle, MessageCircle, Clock, ChevronRight, X
 } from 'lucide-react';
 import { 
   DEMO_DESTINATIONS, DEMO_PACKAGES, 
@@ -14,17 +14,85 @@ import {
 } from '@/lib/constants';
 import { formatCurrency } from '@/lib/utils';
 import WhatsAppButton from '@/components/shared/WhatsAppButton';
+import DestinationSearchBar from '@/components/home/DestinationSearchBar';
+import { SearchResponse } from '@/lib/services/destinations';
 
 export default function HomePage() {
   const [selectedCity, setSelectedCity] = useState('Pune');
   const [destinationFilter, setDestinationFilter] = useState<'all' | 'domestic' | 'international'>('all');
   const [activeTab, setActiveTab] = useState<'all' | 'honeymoon' | 'luxury' | 'family'>('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResult, setSearchResult] = useState<SearchResponse | null>(null);
 
-  const filteredDestinations = DEMO_DESTINATIONS.filter((d) => {
-    if (destinationFilter === 'domestic') return d.is_domestic;
-    if (destinationFilter === 'international') return !d.is_domestic;
-    return true;
-  });
+  // Compute active destinations based on search query and domestic/international tab
+  const activeDestinations = useMemo(() => {
+    let list: any[] = DEMO_DESTINATIONS;
+
+    if (searchQuery.trim()) {
+      if (searchResult && searchResult.destinations) {
+        list = searchResult.destinations;
+      } else {
+        const q = searchQuery.toLowerCase().trim();
+        list = DEMO_DESTINATIONS.filter(
+          (d) =>
+            d.name.toLowerCase().includes(q) ||
+            d.slug.toLowerCase().includes(q) ||
+            d.country.toLowerCase().includes(q) ||
+            d.region.toLowerCase().includes(q) ||
+            d.tagline.toLowerCase().includes(q)
+        );
+      }
+    }
+
+    if (destinationFilter === 'domestic') {
+      return list.filter((d) => d.is_domestic);
+    }
+    if (destinationFilter === 'international') {
+      return list.filter((d) => !d.is_domestic);
+    }
+    return list;
+  }, [searchQuery, searchResult, destinationFilter]);
+
+  // Compute active packages based on search query
+  const activePackages = useMemo(() => {
+    if (!searchQuery.trim()) {
+      return DEMO_PACKAGES;
+    }
+
+    const matchedDestIds = new Set(activeDestinations.map((d) => d.id));
+    const q = searchQuery.toLowerCase().trim();
+
+    // 1. Packages explicitly returned by search result (from DB or fallback)
+    const directPkgs: any[] = searchResult?.matched_packages || [];
+
+    // 2. Packages associated with matched destinations
+    const associatedPkgs = DEMO_PACKAGES.filter(
+      (p) =>
+        matchedDestIds.has(p.destination_id) ||
+        p.title.toLowerCase().includes(q) ||
+        p.summary.toLowerCase().includes(q) ||
+        p.destination_name.toLowerCase().includes(q)
+    );
+
+    // Merge and deduplicate by ID
+    const combined = [...directPkgs, ...associatedPkgs];
+    const seen = new Set<string>();
+    return combined.filter((p) => {
+      if (seen.has(p.id)) return false;
+      seen.add(p.id);
+      return true;
+    });
+  }, [searchQuery, searchResult, activeDestinations]);
+
+  const handleSearchSubmit = (query: string, result: SearchResponse | null) => {
+    setSearchQuery(query);
+    setSearchResult(result);
+  };
+
+  const handleClearSearch = () => {
+    setSearchQuery('');
+    setSearchResult(null);
+  };
 
   return (
     <div className="flex flex-col min-h-screen">
@@ -145,15 +213,56 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* 2. FEATURED DESTINATIONS SHOWCASE */}
-      <section className="py-20 px-4 sm:px-8 max-w-7xl mx-auto w-full">
+      {/* HOMEPAGE DESTINATION SEARCH BAR (Positioned directly above Tours Discovery) */}
+      <DestinationSearchBar
+        onSearchSubmit={handleSearchSubmit}
+        onClearSearch={handleClearSearch}
+        initialQuery={searchQuery}
+        autoScrollTargetId="tours-discovery"
+      />
+
+      {/* 2. FEATURED DESTINATIONS SHOWCASE (Tours Discovery Section) */}
+      <section id="tours-discovery" className="py-20 px-4 sm:px-8 max-w-7xl mx-auto w-full scroll-mt-12">
+        {/* Active Search Filter Banner */}
+        {searchQuery.trim().length > 0 && (
+          <div className="mb-10 rounded-2xl bg-gradient-to-r from-amber-50/90 via-amber-100/50 to-amber-50/90 border border-amber-300/80 p-4 sm:p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm animate-fade-in">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-xl bg-amber-500/10 border border-amber-400/40 text-amber-700 flex items-center justify-center shrink-0">
+                <Compass className="h-5 w-5 text-amber-600" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-amber-900 bg-amber-200/80 px-2 py-0.5 rounded-full">
+                    Active Search
+                  </span>
+                  <p className="text-sm font-bold text-brand-navy">
+                    &ldquo;{searchQuery}&rdquo;
+                  </p>
+                </div>
+                <p className="text-xs text-amber-900/80 mt-0.5">
+                  Discovered {activeDestinations.length} destination{activeDestinations.length === 1 ? '' : 's'} and {activePackages.length} tour package{activePackages.length === 1 ? '' : 's'}
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleClearSearch}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-white hover:bg-gray-50 border border-amber-300 px-3.5 py-2 text-xs font-bold text-gray-700 hover:text-brand-navy transition-all shadow-xs shrink-0"
+            >
+              <X className="h-3.5 w-3.5 text-gray-500" />
+              <span>Reset Search</span>
+            </button>
+          </div>
+        )}
+
         <div className="flex flex-col md:flex-row md:items-end justify-between mb-12">
           <div>
             <span className="text-primary-600 font-bold uppercase tracking-wider text-xs">
               Handpicked Portfolios
             </span>
             <h2 className="font-serif text-3xl sm:text-4xl font-bold text-brand-navy mt-1">
-              Iconic Global & Domestic Destinations
+              {searchQuery.trim() ? `Destinations Matching "${searchQuery}"` : 'Iconic Global & Domestic Destinations'}
             </h2>
             <p className="text-gray-600 mt-2 text-sm sm:text-base max-w-xl">
               Curated for discerning voyagers seeking breathtaking landscapes, cultural elegance, and exceptional comfort.
@@ -196,52 +305,82 @@ export default function HomePage() {
         </div>
 
         {/* Destination Cards Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-          {filteredDestinations.map((dest) => (
-            <Link
-              key={dest.id}
-              href={`/destinations/${dest.slug}`}
-              className="group relative flex flex-col overflow-hidden rounded-2xl bg-white shadow-md hover:shadow-2xl transition-all duration-300 border border-gray-100"
-            >
-              <div className="relative h-72 w-full overflow-hidden bg-gray-100">
-                <Image
-                  src={dest.hero_image}
-                  alt={dest.name}
-                  fill
-                  className="object-cover transition-transform duration-700 group-hover:scale-110"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
-                <span className="absolute top-4 left-4 rounded-full bg-brand-navy/80 backdrop-blur-md px-3 py-1 text-[11px] font-semibold text-amber-300">
-                  {dest.is_domestic ? 'Domestic Pride' : 'International'}
-                </span>
-                <div className="absolute bottom-4 left-4 right-4 text-white">
-                  <span className="text-xs uppercase tracking-wider text-amber-300 font-medium">
-                    {dest.region}, {dest.country}
+        {activeDestinations.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            {activeDestinations.map((dest) => (
+              <Link
+                key={dest.id}
+                href={`/destinations/${dest.slug}`}
+                className="group relative flex flex-col overflow-hidden rounded-2xl bg-white shadow-md hover:shadow-2xl transition-all duration-300 border border-gray-100"
+              >
+                <div className="relative h-72 w-full overflow-hidden bg-gray-100">
+                  <Image
+                    src={dest.hero_image}
+                    alt={dest.name}
+                    fill
+                    className="object-cover transition-transform duration-700 group-hover:scale-110"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+                  <span className="absolute top-4 left-4 rounded-full bg-brand-navy/80 backdrop-blur-md px-3 py-1 text-[11px] font-semibold text-amber-300">
+                    {dest.is_domestic ? 'Domestic Pride' : 'International'}
                   </span>
-                  <h3 className="font-serif text-2xl font-bold mt-0.5 group-hover:text-amber-300 transition-colors">
-                    {dest.name}
-                  </h3>
+                  <div className="absolute bottom-4 left-4 right-4 text-white">
+                    <span className="text-xs uppercase tracking-wider text-amber-300 font-medium">
+                      {dest.region ? `${dest.region}, ` : ''}{dest.country}
+                    </span>
+                    <h3 className="font-serif text-2xl font-bold mt-0.5 group-hover:text-amber-300 transition-colors">
+                      {dest.name}
+                    </h3>
+                  </div>
                 </div>
-              </div>
 
-              <div className="p-5 flex-1 flex flex-col justify-between">
-                <p className="text-xs text-gray-600 leading-relaxed line-clamp-2">
-                  {dest.overview}
-                </p>
+                <div className="p-5 flex-1 flex flex-col justify-between">
+                  <p className="text-xs text-gray-600 leading-relaxed line-clamp-2">
+                    {dest.overview}
+                  </p>
 
-                <div className="mt-4 pt-4 border-t border-gray-100 flex items-center justify-between">
-                  <span className="text-xs font-medium text-gray-500">
-                    Best: <strong className="text-gray-700">{dest.best_season.split('(')[0]}</strong>
-                  </span>
-                  <span className="text-xs font-bold text-primary-700 flex items-center gap-1 group-hover:translate-x-1 transition-transform">
-                    <span>Explore Guide</span>
-                    <ChevronRight className="h-3.5 w-3.5" />
-                  </span>
+                  <div className="mt-4 pt-4 border-t border-gray-100 flex items-center justify-between">
+                    <span className="text-xs font-medium text-gray-500">
+                      Best: <strong className="text-gray-700">{dest.best_season ? dest.best_season.split('(')[0] : 'Year-Round'}</strong>
+                    </span>
+                    <span className="text-xs font-bold text-primary-700 flex items-center gap-1 group-hover:translate-x-1 transition-transform">
+                      <span>Explore Guide</span>
+                      <ChevronRight className="h-3.5 w-3.5" />
+                    </span>
+                  </div>
                 </div>
-              </div>
-            </Link>
-          ))}
-        </div>
+              </Link>
+            ))}
+          </div>
+        ) : (
+          /* Empty Destination State */
+          <div className="rounded-2xl border border-dashed border-gray-300 bg-white p-12 text-center">
+            <div className="h-12 w-12 rounded-full bg-amber-50 text-amber-600 flex items-center justify-center mx-auto mb-3">
+              <Compass className="h-6 w-6" />
+            </div>
+            <h3 className="font-serif text-xl font-bold text-brand-navy">
+              No destinations found matching &ldquo;{searchQuery}&rdquo;
+            </h3>
+            <p className="text-xs text-gray-500 mt-2 max-w-md mx-auto leading-relaxed">
+              We couldn&apos;t find an exact portfolio match. However, our Pune travel specialists curate bespoke private itineraries for almost any global destination!
+            </p>
+            <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+              <button
+                type="button"
+                onClick={handleClearSearch}
+                className="rounded-xl bg-brand-navy px-5 py-2.5 text-xs font-bold text-white hover:bg-slate-800 transition-colors"
+              >
+                View All Destinations
+              </button>
+              <WhatsAppButton
+                variant="inline"
+                prefilledText={`Hello The Tour Vision Pune, I searched for "${searchQuery}" on your website. Do you arrange custom travel packages for this destination?`}
+                label="Inquire for Custom Destination"
+                className="py-2 px-3 text-xs"
+              />
+            </div>
+          </div>
+        )}
       </section>
 
       {/* 3. POPULAR CURATED PACKAGES */}
@@ -253,7 +392,7 @@ export default function HomePage() {
                 Signature Itineraries
               </span>
               <h2 className="font-serif text-3xl sm:text-4xl font-bold text-brand-navy mt-1">
-                Featured Luxury Packages
+                {searchQuery.trim() ? `Tour Packages for "${searchQuery}"` : 'Featured Luxury Packages'}
               </h2>
               <p className="text-gray-600 mt-2 text-sm sm:text-base max-w-xl">
                 Every package is fully customizable. Accommodations and chauffeurs are vetted by our Pune team.
@@ -263,82 +402,124 @@ export default function HomePage() {
               href="/packages"
               className="mt-4 md:mt-0 inline-flex items-center gap-2 text-sm font-bold text-primary-700 hover:text-primary-800"
             >
-              <span>View All 15+ Packages</span>
+              <span>View All Packages</span>
               <ArrowRight className="h-4 w-4" />
             </Link>
           </div>
 
           {/* Package Cards Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {DEMO_PACKAGES.map((pkg) => (
-              <div
-                key={pkg.id}
-                className="group flex flex-col rounded-2xl bg-white shadow-md hover:shadow-xl transition-all duration-300 border border-amber-100 overflow-hidden"
-              >
-                <div className="relative h-52 w-full overflow-hidden bg-gray-100">
-                  <Image
-                    src={pkg.cover_image}
-                    alt={pkg.title}
-                    fill
-                    className="object-cover transition-transform duration-700 group-hover:scale-105"
-                  />
-                  <div className="absolute top-3 right-3 rounded-full bg-brand-navy/90 backdrop-blur-md px-2.5 py-1 text-[11px] font-bold text-amber-300">
-                    {pkg.days}D / {pkg.nights}N
-                  </div>
-                  <div className="absolute bottom-3 left-3 rounded-md bg-black/60 backdrop-blur-sm px-2 py-0.5 text-[10px] text-white">
-                    {pkg.category_name}
-                  </div>
-                </div>
-
-                <div className="p-5 flex-1 flex flex-col justify-between">
-                  <div>
-                    <h3 className="font-serif text-lg font-bold text-brand-navy line-clamp-2 group-hover:text-primary-700 transition-colors">
-                      {pkg.title}
-                    </h3>
-                    <p className="mt-2 text-xs text-gray-500 line-clamp-2">
-                      {pkg.summary}
-                    </p>
-                  </div>
-
-                  <div className="mt-6 pt-4 border-t border-gray-100">
-                    <div className="flex items-baseline justify-between">
-                      <div>
-                        <span className="text-[10px] uppercase text-gray-400 block font-semibold">
-                          Starting From
-                        </span>
-                        <div className="flex items-baseline gap-2">
-                          <span className="text-xl font-extrabold text-brand-navy">
-                            {formatCurrency(pkg.discounted_price_inr || pkg.price_inr)}
-                          </span>
-                          {pkg.discounted_price_inr && (
-                            <span className="text-xs text-gray-400 line-through">
-                              {formatCurrency(pkg.price_inr)}
-                            </span>
-                          )}
-                        </div>
+          {activePackages.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              {activePackages.map((pkg) => (
+                <div
+                  key={pkg.id}
+                  className="group flex flex-col rounded-2xl bg-white shadow-md hover:shadow-xl transition-all duration-300 border border-amber-100 overflow-hidden"
+                >
+                  <div className="relative h-52 w-full overflow-hidden bg-gray-100">
+                    <Image
+                      src={pkg.cover_image}
+                      alt={pkg.title}
+                      fill
+                      className="object-cover transition-transform duration-700 group-hover:scale-105"
+                    />
+                    <div className="absolute top-3 right-3 rounded-full bg-brand-navy/90 backdrop-blur-md px-2.5 py-1 text-[11px] font-bold text-amber-300">
+                      {pkg.days}D / {pkg.nights}N
+                    </div>
+                    {pkg.category_name && (
+                      <div className="absolute bottom-3 left-3 rounded-md bg-black/60 backdrop-blur-sm px-2 py-0.5 text-[10px] text-white">
+                        {pkg.category_name}
                       </div>
-                      <span className="text-[10px] text-gray-500">per person</span>
+                    )}
+                  </div>
+
+                  <div className="p-5 flex-1 flex flex-col justify-between">
+                    <div>
+                      <h3 className="font-serif text-lg font-bold text-brand-navy line-clamp-2 group-hover:text-primary-700 transition-colors">
+                        {pkg.title}
+                      </h3>
+                      <p className="mt-2 text-xs text-gray-500 line-clamp-2">
+                        {pkg.summary}
+                      </p>
                     </div>
 
-                    <div className="mt-4 flex items-center gap-2">
-                      <Link
-                        href={`/packages/${pkg.slug}`}
-                        className="flex-1 text-center rounded-lg bg-brand-navy py-2 text-xs font-semibold text-white hover:bg-slate-800 transition-colors"
-                      >
-                        Details
-                      </Link>
-                      <WhatsAppButton
-                        variant="inline"
-                        prefilledText={`Hello The Tour Vision Pune, I am interested in booking the "${pkg.title}" package. Please share detailed itinerary and dates.`}
-                        label="Inquire"
-                        className="py-2 px-3 text-xs"
-                      />
+                    <div className="mt-6 pt-4 border-t border-gray-100">
+                      <div className="flex items-baseline justify-between">
+                        <div>
+                          <span className="text-[10px] uppercase text-gray-400 block font-semibold">
+                            Starting From
+                          </span>
+                          <div className="flex items-baseline gap-2">
+                            <span className="text-xl font-extrabold text-brand-navy">
+                              {formatCurrency(pkg.discounted_price_inr || pkg.price_inr)}
+                            </span>
+                            {pkg.discounted_price_inr && (
+                              <span className="text-xs text-gray-400 line-through">
+                                {formatCurrency(pkg.price_inr)}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <span className="text-[10px] text-gray-500">per person</span>
+                      </div>
+
+                      <div className="mt-4 flex items-center gap-2">
+                        <Link
+                          href={`/packages/${pkg.slug}`}
+                          className="flex-1 text-center rounded-lg bg-brand-navy py-2 text-xs font-semibold text-white hover:bg-slate-800 transition-colors"
+                        >
+                          Details
+                        </Link>
+                        <WhatsAppButton
+                          variant="inline"
+                          prefilledText={`Hello The Tour Vision Pune, I am interested in booking the "${pkg.title}" package. Please share detailed itinerary and dates.`}
+                          label="Inquire"
+                          className="py-2 px-3 text-xs"
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>
+              ))}
+            </div>
+          ) : (
+            /* Bespoke Concierge Callout when no standard packages exist for the destination */
+            <div className="rounded-3xl border border-amber-300/80 bg-gradient-to-br from-amber-50/90 via-white to-amber-50/50 p-8 sm:p-12 shadow-sm text-center max-w-4xl mx-auto">
+              <div className="h-14 w-14 rounded-2xl bg-amber-100 border border-amber-300 text-amber-700 flex items-center justify-center mx-auto mb-4 shadow-xs">
+                <Sparkles className="h-7 w-7 text-amber-600" />
               </div>
-            ))}
-          </div>
+              <span className="text-[11px] font-bold uppercase tracking-widest text-primary-700 bg-amber-100/60 px-3 py-1 rounded-full border border-amber-300/40 inline-block">
+                Bespoke Private Itineraries
+              </span>
+              <h3 className="font-serif text-2xl sm:text-3xl font-bold text-brand-navy mt-3">
+                Custom Private Tours for {activeDestinations[0]?.name || searchQuery}
+              </h3>
+              <p className="mt-3 text-xs sm:text-sm text-gray-600 max-w-2xl mx-auto leading-relaxed">
+                Rather than generic fixed-departure group packages, The Tour Vision designs 100% private, bespoke luxury journeys for {activeDestinations[0]?.name || searchQuery}. Enjoy hand-verified 5-star palace or villa stays, private airport greetings, dedicated English/Hindi-speaking chauffeurs, and customized day-by-day pacing ex-Pune &amp; Mumbai.
+              </p>
+              <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
+                <WhatsAppButton
+                  variant="inline"
+                  prefilledText={`Hello The Tour Vision Pune, I am interested in a bespoke private holiday to "${activeDestinations[0]?.name || searchQuery}". Please share custom itinerary and pricing options.`}
+                  label="Inquire with Pune Specialist"
+                  className="py-3 px-6 text-xs sm:text-sm shadow-md"
+                />
+                <Link
+                  href="/trip-planner"
+                  className="inline-flex items-center gap-2 rounded-xl bg-brand-navy px-6 py-3 text-xs sm:text-sm font-bold text-white hover:bg-slate-800 transition-colors shadow-md"
+                >
+                  <span>Build Custom Itinerary</span>
+                  <ArrowRight className="h-4 w-4 text-amber-400" />
+                </Link>
+                <button
+                  type="button"
+                  onClick={handleClearSearch}
+                  className="text-xs font-semibold text-gray-600 hover:text-gray-900 underline ml-2"
+                >
+                  Show all 15+ packages
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </section>
 

@@ -9,28 +9,81 @@ import {
 import { DEMO_DESTINATIONS, DEMO_PACKAGES } from '@/lib/constants';
 import { formatCurrency } from '@/lib/utils';
 import WhatsAppButton from '@/components/shared/WhatsAppButton';
+import { createClient } from '@/lib/supabase/server';
+
+async function getDestination(rawSlug: string) {
+  const clean = decodeURIComponent(rawSlug).toLowerCase().trim();
+
+  try {
+    const supabase = await createClient();
+    const pattern = `%${clean}%`;
+    const { data: dbDest, error } = await supabase
+      .from('destinations')
+      .select(`
+        *,
+        packages:packages(*)
+      `)
+      .eq('is_published', true)
+      .or(`slug.eq.${clean},slug.ilike.${pattern},name.ilike.${pattern}`)
+      .order('sort_order', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+
+    if (!error && dbDest) {
+      const pkgs = (dbDest.packages || []).filter((p: any) => p.is_published !== false);
+      return {
+        destination: dbDest,
+        relatedPackages: pkgs,
+      };
+    }
+  } catch (err) {
+    console.warn('Database lookup for destination failed, using static fallback:', err);
+  }
+
+  // Fallback to static constants with flexible slug matching
+  const match = DEMO_DESTINATIONS.find((d) => {
+    const dSlug = d.slug.toLowerCase();
+    const dName = d.name.toLowerCase();
+    return (
+      dSlug === clean ||
+      dSlug.startsWith(clean) ||
+      clean.startsWith(dSlug) ||
+      dName === clean ||
+      clean.includes(dName) ||
+      dName.includes(clean) ||
+      dSlug.includes(clean)
+    );
+  });
+
+  if (!match) return null;
+  const relatedPackages = DEMO_PACKAGES.filter((p) => p.destination_id === match.id);
+
+  return {
+    destination: match,
+    relatedPackages,
+  };
+}
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const destination = DEMO_DESTINATIONS.find((d) => d.slug === slug);
-  if (!destination) return { title: 'Destination Not Found' };
+  const data = await getDestination(slug);
+  if (!data?.destination) return { title: 'Destination Not Found | The Tour Vision Pune' };
 
   return {
-    title: `${destination.name} Luxury Travel Guide | The Tour Vision Pune`,
-    description: destination.overview,
+    title: `${data.destination.name} Luxury Travel Guide | The Tour Vision Pune`,
+    description: data.destination.overview,
   };
 }
 
 export default async function DestinationDetailPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const destination = DEMO_DESTINATIONS.find((d) => d.slug === slug);
+  const data = await getDestination(slug);
 
-  if (!destination) {
+  if (!data?.destination) {
     notFound();
   }
 
-  // Find packages linked to this destination
-  const relatedPackages = DEMO_PACKAGES.filter((p) => p.destination_id === destination.id);
+  const { destination, relatedPackages } = data;
 
   return (
     <div className="bg-[#fcfaf7] min-h-screen">
@@ -96,7 +149,7 @@ export default async function DestinationDetailPage({ params }: { params: Promis
                 <span>Signature Experiences Curated by The Tour Vision</span>
               </h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {destination.highlights.map((highlight, index) => (
+                {(destination.highlights || []).map((highlight: string, index: number) => (
                   <div key={index} className="flex items-start gap-3">
                     <CheckCircle className="h-5 w-5 text-emerald-600 mt-0.5 shrink-0" />
                     <span className="text-sm text-gray-800 leading-snug">{highlight}</span>
@@ -113,7 +166,7 @@ export default async function DestinationDetailPage({ params }: { params: Promis
 
               {relatedPackages.length > 0 ? (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                  {relatedPackages.map((pkg) => (
+                  {relatedPackages.map((pkg: any) => (
                     <div
                       key={pkg.id}
                       className="group rounded-2xl bg-white border border-gray-200 overflow-hidden shadow-sm hover:shadow-lg transition-all flex flex-col justify-between"
